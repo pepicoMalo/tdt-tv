@@ -100,3 +100,11 @@ D:\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app
 ```
 
 La build de debug activa la depuración remota del WebView: con `chrome://inspect` se ven los selectores del reproductor para afinar recetas.
+
+## APK y clave de firma
+
+- `dist/tdt-tv-0.2.0-debug.apk`: la APK ya compilada, lista para `adb install -r`.
+- `signing/debug.keystore`: el keystore de depuración con el que se firmó esa APK (alias `androiddebugkey`, contraseñas `android`,
+  huella SHA-256 `79:D2:F6:AB:3A:7B:AE:D8:0B:9F:FC:8D:20:1A:CE:B7:3A:F3:41:9B:B9:CD:97:BD:DE:67:D9:A4:6C:6C:AC:49`). Es el de
+  depuración estándar de Android, no un secreto: sirve para que otra máquina firme igual y la APK se instale encima de la anterior.
+  Para usarlo, copiarlo a `%USERPROFILE%\.android\debug.keystore` antes de compilar. No es apto para publicar en una tienda.

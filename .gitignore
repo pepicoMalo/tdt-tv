@@ -4,4 +4,5 @@ local.properties
 .idea/
 *.iml
 *.apk
-dist/
+dist/*
+!dist/tdt-tv-0.2.0-debug.apk
