@@ -11,8 +11,8 @@ android {
         applicationId = "es.tdttv.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
 
         val listBase = (project.findProperty("tdttv.listBaseUrl") as String?) ?: ""
         buildConfigField("String", "LIST_BASE_URL", "\"$listBase\"")
@@ -29,6 +29,17 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    signingConfigs {
+        // Keystore de depuracion estandar de Android guardado en el repo (ver README): asi cualquier maquina firma
+        // igual y la APK se instala encima de la anterior sin desinstalar.
+        getByName("debug") {
+            storeFile = rootProject.file("signing/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

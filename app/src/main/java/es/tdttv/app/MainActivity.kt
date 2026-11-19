@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -18,7 +20,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
@@ -27,6 +30,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -39,14 +43,17 @@ private const val LONG_PRESS_MS = 600L
 private const val OVERLAY_MS = 4000L
 private const val EXIT_WINDOW_MS = 2000L
 private const val TAP_MS = 60L
-private const val KEYBOARD_DELAY_MS = 250L
+private const val FIELD_DELAY_MS = 250L
 private const val PAGE_SCROLL_NOTCHES = 6f
 
-// true si el elemento con foco admite texto (para forzar el teclado en pantalla tras pulsar con el cursor)
-private const val EDITING_JS = "(function(){var a=document.activeElement;if(!a)return false;" +
-    "if(a.isContentEditable)return true;var t=(a.tagName||'').toUpperCase();" +
-    "if(t==='TEXTAREA')return true;if(t!=='INPUT')return false;" +
-    "return !/^(button|submit|reset|checkbox|radio|image|file|range|color)\$/i.test(a.type||'');})()"
+/**
+ * WebView que nunca abre el teclado del sistema: en el Chromecast se abria y se cerraba solo, asi que el texto se
+ * pide en un dialogo nativo (ver MainActivity.showTextDialog). Un teclado fisico sigue llegando como teclas.
+ */
+private class TvWebView(context: Context) : WebView(context) {
+    override fun onCheckIsTextEditor(): Boolean = false
+    override fun onCreateInputConnection(outAttrs: EditorInfo?): InputConnection? = null
+}
 
 class MainActivity : Activity() {
 
@@ -74,6 +81,7 @@ class MainActivity : Activity() {
     private lateinit var pointerView: PointerView
     private val pointer by lazy { PointerMath(0, 0, resources.displayMetrics.density) }
     private var pointerMode = false
+    private var textDialog: AlertDialog? = null
     private var lastBack = 0L
     private var okDownAt = 0L
     private var okLongDone = false
@@ -120,6 +128,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        textDialog?.dismiss()
         web.loadUrl("about:blank")
     }
 
@@ -136,7 +145,7 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun buildWebView(): WebView {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
-        val w = WebView(this)
+        val w = TvWebView(this)
         w.setBackgroundColor(Color.BLACK)
         w.isFocusable = true
         w.isFocusableInTouchMode = true
@@ -326,8 +335,9 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- Cursor y teclado
 
     /**
-     * Modo cursor: las flechas mueven un cursor, OK pulsa (un toque en el WebView, asi que los campos de texto abren
-     * el teclado en pantalla) y CH+/CH- desplazan la pagina. La pagina se muestra sin el css de pantalla completa.
+     * Modo cursor: las flechas mueven un cursor, OK pulsa (un toque en el WebView; si deja el foco en un campo de
+     * texto se abre un dialogo para escribir) y CH+/CH- desplazan la pagina. La pagina se muestra sin el css de
+     * pantalla completa.
      */
     private fun setPointerMode(on: Boolean, announce: Boolean = true) {
         pointerMode = on
@@ -340,7 +350,7 @@ class MainActivity : Activity() {
         web.evaluateJavascript("window.__tdt && window.__tdt.setInteractive && window.__tdt.setInteractive($on)", null)
         if (announce) {
             showOverlay(
-                if (on) "Cursor: flechas mueven · OK pulsa · CH+/CH- desplazan · Atrás sale"
+                if (on) "Cursor: flechas mueven · OK pulsa (en un campo, escribe) · CH+/CH- desplazan · Atrás sale"
                 else "Zapping activo"
             )
         }
@@ -361,7 +371,7 @@ class MainActivity : Activity() {
         sendTouch(MotionEvent.ACTION_DOWN, downTime, downTime, x, y)
         ui.postDelayed({
             sendTouch(MotionEvent.ACTION_UP, downTime, SystemClock.uptimeMillis(), x, y)
-            ui.postDelayed({ showKeyboardIfEditing() }, KEYBOARD_DELAY_MS)
+            ui.postDelayed({ editFocusedField() }, FIELD_DELAY_MS)
         }, TAP_MS)
     }
 
@@ -391,14 +401,85 @@ class MainActivity : Activity() {
         ev.recycle()
     }
 
-    private fun showKeyboardIfEditing() {
-        if (!pointerMode) return
-        web.evaluateJavascript(EDITING_JS) { r ->
-            if (r == "true" && pointerMode) {
-                web.requestFocus()
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.showSoftInput(web, 0)
+    /** Tras pulsar con el cursor: si la pagina dejo el foco en un campo de texto, pide el texto en un dialogo. */
+    private fun editFocusedField() {
+        if (!pointerMode || textDialog != null) return
+        web.evaluateJavascript(FieldScript.DESCRIBE) { r ->
+            if (!pointerMode || textDialog != null || r == null || r == "null") return@evaluateJavascript
+            val field = try {
+                JSONObject(r)
+            } catch (e: Exception) {
+                return@evaluateJavascript
             }
+            showTextDialog(field.optString("label"), field.optString("type"), field.optString("value"))
+        }
+    }
+
+    private fun showTextDialog(label: String, type: String, current: String) {
+        val password = type == "password"
+        val multiline = type == "textarea"
+        val edit = EditText(this).apply {
+            inputType = when (type) {
+                "password" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                "email" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                "url" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                "number" -> InputType.TYPE_CLASS_NUMBER
+                "tel" -> InputType.TYPE_CLASS_PHONE
+                "textarea" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                else -> InputType.TYPE_CLASS_TEXT
+            }
+            if (!multiline) imeOptions = EditorInfo.IME_ACTION_DONE
+            setText(current)
+            setSelection(text.length)
+        }
+        val pad = (24 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(edit, FrameLayout.LayoutParams(MATCH, WRAP))
+        }
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle(if (label.isBlank()) "Escribir" else "Escribir: $label")
+            .setView(box)
+            .setPositiveButton("Aceptar") { _, _ -> fillField(edit.text.toString()) }
+            .setNegativeButton("Cancelar", null)
+        if (password) builder.setNeutralButton("Ver", null)
+        val dialog = builder.create()
+        dialog.setOnDismissListener {
+            textDialog = null
+            web.requestFocus()
+        }
+        textDialog = dialog
+        dialog.show()
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+
+        if (password) {
+            // El boton "Ver" alterna entre puntos y texto sin cerrar el dialogo.
+            val toggle = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+            toggle.setOnClickListener {
+                val hidden = edit.transformationMethod != null
+                edit.transformationMethod = if (hidden) null else PasswordTransformationMethod.getInstance()
+                toggle.text = if (hidden) "Ocultar" else "Ver"
+                edit.setSelection(edit.text.length)
+            }
+        }
+        if (!multiline) {
+            edit.setOnEditorActionListener { _, actionId, event ->
+                val enter = event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
+                if (actionId == EditorInfo.IME_ACTION_DONE || enter) {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        edit.requestFocus()
+    }
+
+    private fun fillField(text: String) {
+        web.evaluateJavascript(FieldScript.fill(text)) { r ->
+            if (r != "true") Toast.makeText(this, "No se pudo escribir en el campo", Toast.LENGTH_SHORT).show()
         }
     }
 

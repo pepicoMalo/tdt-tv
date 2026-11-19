@@ -59,6 +59,18 @@ class RecipeBookTest {
     }
 
     @Test
+    fun cope_pulsa_el_boton_de_video_y_hereda_el_rechazo_de_cookies() {
+        // Canal propio (no el de la lista): la lista la edita su dueno y puede quitar TRECE
+        val trece = M3uParser.parse(
+            "#EXTM3U\n#EXTINF:-1 tvg-id=\"t\",TRECE\nhttps://www.cope.es/directos/trece\n"
+        ).single()
+        val r = book.forChannel(trece)
+        assertEquals(".c-card--claim__toggle__btn.toggle-btn-video", r.getString("play"))
+        assertTrue(r.getString("js").contains("didomi-notice-disagree-button"))
+        assertTrue(r.getBoolean("fullVideo"))
+    }
+
+    @Test
     fun inheritJs_no_se_filtra_a_la_receta_final() {
         assertFalse(recipe("Antena 3").has("inheritJs"))
     }

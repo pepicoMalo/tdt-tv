@@ -30,15 +30,20 @@ Sirve para iniciar sesión en los canales con cuenta (`x-login`), aceptar cookie
 | Botón | Acción |
 |---|---|
 | Anillo | Mueve el cursor (más rápido si se mantiene pulsado). Empujar contra el borde superior o inferior desplaza la página |
-| OK | Pulsa donde está el cursor. Si es un campo de texto abre el teclado en pantalla |
+| OK | Pulsa donde está el cursor. Si deja el foco en un campo de texto abre un cuadro para escribir (ver abajo) |
 | CH+ / CH- (o Re Pág / Av Pág) | Desplaza la página |
 | OK largo / Menú | Menú |
-| Atrás | Sale del modo cursor y vuelve al zapping (con el teclado abierto, el primer Atrás lo cierra) |
+| Atrás | Sale del modo cursor y vuelve al zapping |
 
 Mientras está activo, la página se ve sin el CSS de pantalla completa y sin los clics automáticos de las recetas, como en un navegador normal.
 Al salir, vuelve a la pantalla completa. Cambiar de canal o recargarlo desde el menú también sale del modo.
 Tras iniciar sesión conviene marcar «recordarme» si la web lo ofrece. La sesión (cookies) se guarda en el almacenamiento de la app y se vuelca a disco al pausarla.
 No hay inicio de sesión con ventanas emergentes (Google, Apple…): usa correo y contraseña. También se puede escribir desde el móvil con la app Google TV.
+
+El texto se escribe en un cuadro nativo de Android (el WebView no abre su propio teclado: en el Chromecast se abría y se cerraba solo, versión 0.2.0).
+Al pulsar OK sobre un campo sale el cuadro con el valor actual; con **Aceptar** (o «Hecho» en el teclado) se pone en el campo y se avisa a la página
+(`input` y `change`). Las contraseñas salen con puntos y el botón **Ver** las muestra. Tras escribir, mueve el cursor al botón de enviar y pulsa OK.
+Solo funciona con campos de la propia página, de un iframe del mismo origen o dentro de un shadow DOM; un campo en un iframe de otro origen no se puede rellenar.
 
 ## Formato de `canales.m3u`
 
@@ -103,8 +108,9 @@ La build de debug activa la depuración remota del WebView: con `chrome://inspec
 
 ## APK y clave de firma
 
-- `dist/tdt-tv-0.2.0-debug.apk`: la APK ya compilada, lista para `adb install -r`.
-- `signing/debug.keystore`: el keystore de depuración con el que se firmó esa APK (alias `androiddebugkey`, contraseñas `android`,
+- `dist/`: las APK ya compiladas, listas para `adb install -r`.
+- `signing/debug.keystore`: el keystore de depuración con el que se firman (alias `androiddebugkey`, contraseñas `android`,
   huella SHA-256 `79:D2:F6:AB:3A:7B:AE:D8:0B:9F:FC:8D:20:1A:CE:B7:3A:F3:41:9B:B9:CD:97:BD:DE:67:D9:A4:6C:6C:AC:49`). Es el de
-  depuración estándar de Android, no un secreto: sirve para que otra máquina firme igual y la APK se instale encima de la anterior.
-  Para usarlo, copiarlo a `%USERPROFILE%\.android\debug.keystore` antes de compilar. No es apto para publicar en una tienda.
+  depuración estándar de Android, no un secreto. `app/build.gradle.kts` lo usa en `signingConfigs.debug`, así que cualquier máquina
+  firma igual y la APK se instala encima de la anterior sin desinstalar (`gradle :app:signingReport` muestra la ruta que usa).
+  No es apto para publicar en una tienda.
