@@ -10,13 +10,13 @@ import java.net.URL
 /** Descarga canales.m3u y recipes.json. Orden: remoto -> cache en disco -> assets. */
 class ChannelRepository(private val ctx: Context) {
 
-    class Data(val channels: List<Channel>, val recipes: RecipeBook)
+    class Data(val channels: List<Channel>, val recipes: RecipeBook, val epgUrl: String?)
 
     /** Bloqueante: llamar fuera del hilo principal. */
     fun load(): Data {
         val m3u = fetch(LIST_FILE) { M3uParser.parse(it).isNotEmpty() }
         val rec = fetch(RECIPES_FILE) { RecipeBook.parse(it) != null }
-        return Data(M3uParser.parse(m3u), RecipeBook.parse(rec) ?: RecipeBook.EMPTY)
+        return Data(M3uParser.parse(m3u), RecipeBook.parse(rec) ?: RecipeBook.EMPTY, M3uParser.epgUrl(m3u))
     }
 
     private fun fetch(name: String, valid: (String) -> Boolean): String {

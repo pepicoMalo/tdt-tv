@@ -8,7 +8,11 @@ Un único canal a pantalla completa; se cambia de canal con el anillo del mando.
 - `MainActivity`: un `WebView` a pantalla completa. Al sintonizar un canal carga su URL oficial e inyecta un script
   (`PageScript.kt`) que deja el reproductor a pantalla completa, lo des-silencia y le da play.
 - Si la URL del canal termina en `.m3u8` (0.3.0 o posterior) es un flujo HLS directo: se reproduce con un `VideoView` nativo
-  (reproductor de Android, sin dependencias), sin página web ni modo cursor. Si el flujo se corta, reintenta 3 veces.
+  (reproductor de Android, sin dependencias), sin página web ni modo cursor. Si el flujo se corta, reintenta 3 veces; si no
+  llega a arrancar (error, o sin imagen a los 20 s) y el canal tiene `x-web`, abre esa página (0.4.0 o posterior).
+- La guía de programación (0.4.0 o posterior) se baja en segundo plano de la `url-tvg` de la cabecera de la lista (XMLTV, p. ej.
+  el de TDTChannels), se queda en disco solo con los canales de la lista (`tvg-id` = id de la guía) y se refresca cada 6 horas.
+  Solo se usa en la lista de canales (`Epg.kt`, `EpgRepository.kt`).
 - La lista de canales (`canales.m3u`) y las recetas por sitio (`recipes.json`) se descargan al arrancar de una URL base
   (`tdttv.listBaseUrl` en `gradle.properties`). Si no hay red se usa la última copia en caché y, en el primer arranque
   sin red, la copia incluida en `app/src/main/assets/`.
@@ -20,8 +24,9 @@ Un único canal a pantalla completa; se cambia de canal con el anillo del mando.
 |---|---|
 | Anillo arriba / CH+ | Canal siguiente |
 | Anillo abajo / CH- | Canal anterior |
-| OK (pulsación corta) | Entra en el **modo cursor y teclado** (ver abajo) |
-| OK (pulsación larga) / Menú | Menú: subtítulos, elegir canal, recargar, actualizar lista, cursor y teclado, salir |
+| OK (un toque) | Entra en el **modo cursor y teclado** (ver abajo); en un flujo directo solo muestra el rótulo del canal |
+| OK (dos toques seguidos) | **Lista de todos los canales**, con el programa que emiten ahora si la guía lo tiene; OK en uno lo sintoniza, Atrás cierra |
+| OK (pulsación larga) / Menú | Menú: subtítulos, elegir canal (la misma lista), recargar, actualizar lista, cursor y teclado, salir |
 | Info | Muestra el canal actual |
 | Atrás | Pulsar dos veces para salir |
 
@@ -60,8 +65,11 @@ https://www.3cat.cat/3cat/directes/tv3/
 
 Atributos propios: `x-subs="1"` (el canal emite subtítulos: solo entonces aparece la opción), `x-login="1"` (pide cuenta:
 se queda en la lista, avisa al sintonizarlo y se inicia sesión con el modo cursor; la 0.1.0 lo descartaba),
-`x-recipe="clave"` (fuerza una receta), `x-disabled="1"` (lo desactiva sin borrarlo).
-En los flujos `.m3u8` solo cuentan `x-disabled` y el nombre/grupo: no hay página, así que `x-subs`, `x-login` y `x-recipe` no se usan.
+`x-recipe="clave"` (fuerza una receta), `x-disabled="1"` (lo desactiva sin borrarlo), `x-web="https://…"` (página de un canal
+con flujo `.m3u8`, a la que se vuelve si el flujo no arranca; 0.4.0).
+En los flujos `.m3u8` no hay página, así que `x-subs`, `x-login` y `x-recipe` solo cuentan si se abre `x-web`.
+`tvg-id` es el id del canal en la guía de programación, y la cabecera `#EXTM3U url-tvg="https://…/guia.xml.gz"` da la guía
+(XMLTV, `.xml` o `.xml.gz`; 0.4.0). Un canal sin id en la guía simplemente no muestra programa.
 El orden de la lista es el orden de canales.
 
 Ejemplo de flujo directo:

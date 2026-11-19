@@ -11,7 +11,9 @@ data class Channel(
     /** Canal que pide cuenta; la v1 los descarta. */
     val needsLogin: Boolean,
     /** Clave de receta explicita; si es null se busca por dominio. */
-    val recipeKey: String?
+    val recipeKey: String?,
+    /** Pagina web a la que se vuelve si un flujo directo (.m3u8) no arranca. */
+    val webUrl: String? = null
 ) {
     /** La URL es un flujo HLS directo (.m3u8): lo reproduce el reproductor nativo en vez de abrir una web. */
     val isStream: Boolean

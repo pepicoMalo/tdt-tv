@@ -7,12 +7,16 @@ import java.text.Normalizer
  *   #EXTINF:-1 tvg-id="la1" tvg-logo="..." group-title="Nacional" x-subs="1",La 1
  *   https://pagina-oficial-del-directo
  * Si la URL termina en .m3u8 es un flujo HLS directo y se reproduce con el reproductor nativo (sin pagina web, asi que
- * x-subs, x-login y x-recipe no se usan).
+ * x-subs, x-login y x-recipe solo cuentan si el flujo falla y se abre x-web).
+ *
+ * tvg-id es el id del canal en la guia de programacion (XMLTV), p. ej. La1.TV. La cabecera puede llevar
+ * url-tvg="https://.../guia.xml.gz" con la guia.
  *
  * Atributos propios (los reproductores M3U normales los ignoran):
  *   x-subs="1"      el canal emite subtitulos
  *   x-login="1"     pide cuenta: se queda en la lista y el usuario inicia sesion con el modo cursor
  *   x-recipe="clave" fuerza una receta de recipes.json
+ *   x-web="https://..." pagina del canal a la que se vuelve si el flujo .m3u8 no arranca
  *   x-disabled="1"  desactiva el canal sin borrarlo
  */
 object M3uParser {
@@ -47,10 +51,21 @@ object M3uParser {
                 logo = attrs["tvg-logo"]?.takeIf { it.isNotBlank() },
                 hasSubs = attrs["x-subs"] == "1",
                 needsLogin = attrs["x-login"] == "1",
-                recipeKey = attrs["x-recipe"]?.takeIf { it.isNotBlank() }
+                recipeKey = attrs["x-recipe"]?.takeIf { it.isNotBlank() },
+                webUrl = attrs["x-web"]?.takeIf { it.startsWith("https://") }
             )
         }
         return out
+    }
+
+    /** url-tvg de la cabecera #EXTM3U: la guia de programacion (solo https), o null. */
+    fun epgUrl(text: String): String? {
+        val header = text.lineSequence()
+            .map { it.removePrefix("﻿").trim() }
+            .firstOrNull { it.startsWith("#EXTM3U", ignoreCase = true) }
+            ?: return null
+        val attrs = ATTR.findAll(header).associate { it.groupValues[1].lowercase() to it.groupValues[2] }
+        return (attrs["url-tvg"] ?: attrs["x-tvg-url"])?.takeIf { it.startsWith("https://") }
     }
 
     private fun parseExtinf(line: String): Pair<Map<String, String>, String> {

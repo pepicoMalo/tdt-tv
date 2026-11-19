@@ -79,6 +79,31 @@ class M3uParserTest {
     }
 
     @Test
+    fun x_web_guarda_la_pagina_de_respaldo_solo_si_es_https() {
+        val channels = M3uParser.parse(
+            "#EXTM3U\n" +
+                "#EXTINF:-1 tvg-id=\"a\" x-web=\"https://www.ejemplo.es/directo\",Con web\nhttps://cdn.ejemplo.es/a.m3u8\n" +
+                "#EXTINF:-1 tvg-id=\"b\" x-web=\"http://www.ejemplo.es/directo\",Web insegura\nhttps://cdn.ejemplo.es/b.m3u8\n" +
+                "#EXTINF:-1 tvg-id=\"c\",Sin web\nhttps://cdn.ejemplo.es/c.m3u8\n"
+        )
+        assertEquals(listOf("https://www.ejemplo.es/directo", null, null), channels.map { it.webUrl })
+    }
+
+    @Test
+    fun la_cabecera_puede_dar_la_url_de_la_guia() {
+        assertEquals(
+            "https://guia.ejemplo.es/TV.xml.gz",
+            M3uParser.epgUrl("#EXTM3U url-tvg=\"https://guia.ejemplo.es/TV.xml.gz\"\n#EXTINF:-1,A\nhttps://x/a.m3u8\n")
+        )
+        assertEquals(
+            "https://guia.ejemplo.es/TV.xml",
+            M3uParser.epgUrl("﻿#EXTM3U x-tvg-url=\"https://guia.ejemplo.es/TV.xml\"\n")
+        )
+        assertNull(M3uParser.epgUrl("#EXTM3U url-tvg=\"http://guia.ejemplo.es/TV.xml\"\n"))
+        assertNull(M3uParser.epgUrl("#EXTM3U\n#EXTINF:-1,A\nhttps://x/a.m3u8\n"))
+    }
+
+    @Test
     fun solo_acepta_https_y_genera_id_si_falta() {
         val text = "#EXTM3U\n" +
             "#EXTINF:-1,Sin id\nhttps://ejemplo.es/a\n" +

@@ -32,12 +32,16 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.concurrent.Executors
 
 private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -50,6 +54,9 @@ private const val FIELD_DELAY_MS = 250L
 private const val PAGE_SCROLL_NOTCHES = 6f
 private const val STREAM_RETRY_MS = 4000L
 private const val STREAM_MAX_RETRIES = 3
+private const val STREAM_START_TIMEOUT_MS = 20000L
+private const val DOUBLE_TAP_MS = 350L
+private const val EPG_MAX_AGE_MS = 6L * 60 * 60 * 1000
 
 /**
  * WebView que nunca abre el teclado del sistema: en el Chromecast se abria y se cerraba solo, asi que el texto se
@@ -88,19 +95,47 @@ class MainActivity : Activity() {
     private val pointer by lazy { PointerMath(0, 0, resources.displayMetrics.density) }
     private var pointerMode = false
     private var textDialog: AlertDialog? = null
+
+    // true mientras suena un flujo HLS en el reproductor nativo (false = se muestra una pagina en el WebView)
+    private var streaming = false
     private var streamRetries = 0
+    private var rendered = false
     private val retryStream = Runnable {
         val ch = channels.getOrNull(index)
         if (ch != null && ch.isStream) startStream(ch)
     }
+
+    // Si pasado un rato no hay imagen ni avance, el flujo no sirve: se vuelve a la web del canal (si la hay)
+    private val streamWatchdog = Runnable {
+        val ch = channels.getOrNull(index) ?: return@Runnable
+        val moving = video.isPlaying && video.currentPosition > 1000
+        if (streaming && !rendered && !moving) streamGaveUp(ch, 0, 0)
+    }
+
+    private lateinit var epgRepo: EpgRepository
+    @Volatile private var epg: Epg = Epg.EMPTY
+    private var epgUrl: String? = null
+    private var epgBusy = false
+    private var channelDialog: AlertDialog? = null
+    private var channelAdapter: BaseAdapter? = null
+
     private var lastBack = 0L
     private var okDownAt = 0L
     private var okLongDone = false
+    private var lastOkTap = 0L
+    private val singleOk = Runnable {
+        lastOkTap = 0L
+        // Un flujo directo no tiene pagina: no hay nada que pulsar con el cursor
+        val ch = channels.getOrNull(index)
+        if (ch != null && streaming) showOverlay(channelLabel(ch)) else setPointerMode(true)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         repo = ChannelRepository(applicationContext)
+        epgRepo = EpgRepository(applicationContext)
+        io.execute { epg = epgRepo.loadCache() }
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         web = buildWebView()
@@ -116,6 +151,10 @@ class MainActivity : Activity() {
                 true
             }
             setOnInfoListener { _, what, _ ->
+                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                    rendered = true
+                    ui.removeCallbacks(streamWatchdog)
+                }
                 if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
                     showOverlay("Cargando…", sticky = true)
                 } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END ||
@@ -162,7 +201,10 @@ class MainActivity : Activity() {
     override fun onStop() {
         super.onStop()
         textDialog?.dismiss()
+        channelDialog?.dismiss()
+        ui.removeCallbacks(singleOk)
         ui.removeCallbacks(retryStream)
+        ui.removeCallbacks(streamWatchdog)
         video.stopPlayback()
         web.loadUrl("about:blank")
     }
@@ -280,8 +322,33 @@ class MainActivity : Activity() {
                 val wanted = channels.getOrNull(index)?.id ?: prefs.getString("last", null)
                 channels = data.channels
                 recipes = data.recipes
+                epgUrl = data.epgUrl
                 index = channels.indexOfFirst { it.id == wanted }.coerceAtLeast(0)
                 tune(index)
+                refreshEpg()
+            }
+        }
+    }
+
+    /** Baja la guia de programacion en segundo plano si la que hay (en disco) tiene mas de EPG_MAX_AGE_MS. */
+    private fun refreshEpg() {
+        val url = epgUrl ?: return
+        if (epgBusy) return
+        epgBusy = true
+        val wanted = channels.map { it.id }.toSet()
+        io.execute {
+            val current = epg
+            val fresh = try {
+                epgRepo.refresh(url, wanted, current, EPG_MAX_AGE_MS)
+            } catch (e: Exception) {
+                null
+            }
+            ui.post {
+                epgBusy = false
+                if (!isDestroyed && fresh != null) {
+                    epg = fresh
+                    channelAdapter?.notifyDataSetChanged()
+                }
             }
         }
     }
@@ -291,47 +358,69 @@ class MainActivity : Activity() {
         if (pointerMode) setPointerMode(false, announce = false)
         index = i.mod(channels.size)
         val ch = channels[index]
-        ui.removeCallbacks(retryStream)
+        ui.removeCallbacks(singleOk)
+        lastOkTap = 0L
         streamRetries = 0
         hideCustomView()
-        if (ch.isStream) {
-            web.loadUrl("about:blank")
-            startStream(ch)
-        } else {
-            video.stopPlayback()
-            video.visibility = View.GONE
-            recipe = recipes.forChannel(ch)
-            web.settings.userAgentString = if (recipe.optBoolean("desktop", true)) desktopUa else baseUa
-            web.loadUrl(ch.url)
-        }
+        if (ch.isStream) startStream(ch) else openPage(ch, ch.url)
         prefs.edit().putString("last", ch.id).apply()
         tuned = true
         showOverlay(channelLabel(ch))
     }
 
     private fun startStream(ch: Channel) {
+        streaming = true
+        rendered = false
+        ui.removeCallbacks(retryStream)
+        ui.removeCallbacks(streamWatchdog)
+        web.loadUrl("about:blank")
         video.visibility = View.VISIBLE
         video.setVideoURI(Uri.parse(ch.url))
         video.start()
+        ui.postDelayed(streamWatchdog, STREAM_START_TIMEOUT_MS)
     }
 
-    /** El flujo se cayo: reintenta unas veces (los directos se cortan al cambiar de red) y despues avisa. */
+    /** Muestra [url] en el WebView con la receta del canal (la pagina oficial, o la de respaldo si el flujo falla). */
+    private fun openPage(ch: Channel, url: String) {
+        streaming = false
+        ui.removeCallbacks(retryStream)
+        ui.removeCallbacks(streamWatchdog)
+        video.stopPlayback()
+        video.visibility = View.GONE
+        recipe = recipes.forChannel(ch.copy(url = url))
+        web.settings.userAgentString = if (recipe.optBoolean("desktop", true)) desktopUa else baseUa
+        web.loadUrl(url)
+    }
+
+    /** El flujo dio error: reintenta unas veces (los directos se cortan al cambiar de red) y despues se rinde. */
     private fun streamFailed(what: Int, extra: Int) {
         val ch = channels.getOrNull(index) ?: return
-        if (!ch.isStream) return
+        if (!streaming) return
         if (streamRetries < STREAM_MAX_RETRIES) {
             streamRetries++
             showOverlay("Reconectando ${ch.name}… ($streamRetries/$STREAM_MAX_RETRIES)", sticky = true)
             ui.removeCallbacks(retryStream)
             ui.postDelayed(retryStream, STREAM_RETRY_MS)
         } else {
-            showOverlay("No se pudo reproducir ${ch.name} (error $what/$extra). Menú > Recargar canal", sticky = true)
+            streamGaveUp(ch, what, extra)
+        }
+    }
+
+    /** El flujo no arranca: se abre la web del canal si la lista la da (x-web); si no, se avisa. */
+    private fun streamGaveUp(ch: Channel, what: Int, extra: Int) {
+        val fallback = ch.webUrl
+        if (fallback != null) {
+            showOverlay("El directo de ${ch.name} no arranca: abro su web")
+            openPage(ch, fallback)
+        } else {
+            val code = if (what != 0 || extra != 0) " (error $what/$extra)" else ""
+            showOverlay("No se pudo reproducir ${ch.name}$code. Menú > Recargar canal", sticky = true)
         }
     }
 
     private fun channelLabel(ch: Channel): String {
         val cc = if (ch.hasSubs) "  ·  CC" else ""
-        val account = if (ch.needsLogin) "  ·  pide cuenta: OK = cursor y teclado" else ""
+        val account = if (ch.needsLogin && !streaming) "  ·  pide cuenta: OK = cursor y teclado" else ""
         return "${index + 1}  ${ch.name}  ·  ${ch.group}$cc$account"
     }
 
@@ -369,13 +458,13 @@ class MainActivity : Activity() {
             labels += "Subtítulos: activar / desactivar"
             actions += { toggleSubs() }
         }
-        labels += "Elegir canal…"
-        actions += { showChannelPicker() }
+        labels += "Elegir canal… (también: OK dos veces)"
+        actions += { showChannelList() }
         labels += "Recargar canal"
         actions += { tune(index) }
         labels += "Actualizar lista de canales"
         actions += { loadLists() }
-        if (ch?.isStream != true) {
+        if (!streaming) {
             labels += "Cursor y teclado (iniciar sesión, cookies)"
             actions += { setPointerMode(true) }
         }
@@ -388,15 +477,57 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showChannelPicker() {
-        val names = channels.mapIndexed { i, c -> "${i + 1}  ${c.name}  ·  ${c.group}" }.toTypedArray()
-        AlertDialog.Builder(this)
+    /** Lista de todos los canales, con el programa que emiten ahora si la guia lo tiene; OK en uno lo sintoniza. */
+    private fun showChannelList() {
+        if (channels.isEmpty() || channelDialog != null) return
+        val density = resources.displayMetrics.density
+        val padH = (20 * density).toInt()
+        val padV = (10 * density).toInt()
+        val clock = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = channels.size
+            override fun getItem(position: Int) = channels[position]
+            override fun getItemId(position: Int) = position.toLong()
+
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val row = (convertView as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(padH, padV, padH, padV)
+                    addView(TextView(context).apply { textSize = 20f })
+                    addView(TextView(context).apply {
+                        textSize = 15f
+                        alpha = 0.7f
+                    })
+                }
+                val ch = channels[position]
+                val title = row.getChildAt(0) as TextView
+                val sub = row.getChildAt(1) as TextView
+                val here = position == index
+                title.text = (if (here) "▶ " else "") + "${position + 1}  ${ch.name}"
+                title.typeface = if (here) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                val now = epg.current(ch.id, System.currentTimeMillis())
+                sub.text = if (now != null) "${clock.format(now.start)}–${clock.format(now.stop)}  ${now.title}" else ch.group
+                return row
+            }
+        }
+
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Canales")
-            .setSingleChoiceItems(names, index) { dialog, which ->
-                dialog.dismiss()
+            .setAdapter(adapter) { d, which ->
+                d.dismiss()
                 tune(which)
             }
-            .show()
+            .create()
+        dialog.setOnDismissListener {
+            channelDialog = null
+            channelAdapter = null
+        }
+        channelDialog = dialog
+        channelAdapter = adapter
+        dialog.show()
+        dialog.listView.setSelection(index)
+        refreshEpg()
     }
 
     // ---------------------------------------------------------------- Cursor y teclado
@@ -618,6 +749,23 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- Mando
 
+    /**
+     * OK corto en el zapping: un toque abre el modo cursor (en un flujo directo, el rotulo del canal) y dos toques
+     * seguidos la lista de canales. El primer toque espera DOUBLE_TAP_MS por si llega el segundo.
+     */
+    private fun onOkTap() {
+        val now = SystemClock.uptimeMillis()
+        if (lastOkTap != 0L && now - lastOkTap <= DOUBLE_TAP_MS) {
+            lastOkTap = 0L
+            ui.removeCallbacks(singleOk)
+            showChannelList()
+        } else {
+            lastOkTap = now
+            ui.removeCallbacks(singleOk)
+            ui.postDelayed(singleOk, DOUBLE_TAP_MS)
+        }
+    }
+
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (pointerMode) {
             return pointerKey(e) || super.dispatchKeyEvent(e)
@@ -656,9 +804,7 @@ class MainActivity : Activity() {
                         showMenu()
                     }
                 } else if (!okLongDone) {
-                    // Un flujo directo no tiene pagina: no hay nada que pulsar con el cursor
-                    val ch = channels.getOrNull(index)
-                    if (ch?.isStream == true) showOverlay(channelLabel(ch)) else setPointerMode(true)
+                    onOkTap()
                 }
                 return true
             }
