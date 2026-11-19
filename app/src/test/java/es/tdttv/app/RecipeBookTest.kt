@@ -71,6 +71,18 @@ class RecipeBookTest {
     }
 
     @Test
+    fun youtube_oculta_los_controles_y_rechaza_el_aviso_de_cookies() {
+        val live = M3uParser.parse(
+            "#EXTM3U\n#EXTINF:-1 tvg-id=\"s\",Canal en YouTube\nhttps://www.youtube.com/channel/UC123/live\n"
+        ).single()
+        val r = book.forChannel(live)
+        assertTrue(r.getString("css").contains(".ytp-chrome-bottom"))
+        assertTrue(r.getString("js").contains("consent.youtube.com"))
+        assertTrue(r.getString("js").contains("didomi-notice-disagree-button"))
+        assertTrue(r.getBoolean("fullVideo"))
+    }
+
+    @Test
     fun inheritJs_no_se_filtra_a_la_receta_final() {
         assertFalse(recipe("Antena 3").has("inheritJs"))
     }
