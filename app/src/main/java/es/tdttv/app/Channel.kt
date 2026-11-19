@@ -12,4 +12,8 @@ data class Channel(
     val needsLogin: Boolean,
     /** Clave de receta explicita; si es null se busca por dominio. */
     val recipeKey: String?
-)
+) {
+    /** La URL es un flujo HLS directo (.m3u8): lo reproduce el reproductor nativo en vez de abrir una web. */
+    val isStream: Boolean
+        get() = url.substringBefore('#').substringBefore('?').endsWith(".m3u8", ignoreCase = true)
+}

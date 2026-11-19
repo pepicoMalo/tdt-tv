@@ -67,6 +67,18 @@ class M3uParserTest {
     }
 
     @Test
+    fun una_url_m3u8_es_un_flujo_directo_y_una_pagina_no() {
+        val channels = M3uParser.parse(
+            "#EXTM3U\n" +
+                "#EXTINF:-1 tvg-id=\"a\",Flujo\nhttps://cdn.ejemplo.es/live/master.m3u8\n" +
+                "#EXTINF:-1 tvg-id=\"b\",Con token\nhttps://cdn.ejemplo.es/live/index.M3U8?token=abc#x\n" +
+                "#EXTINF:-1 tvg-id=\"c\",Pagina\nhttps://www.ejemplo.es/directo\n" +
+                "#EXTINF:-1 tvg-id=\"d\",Pagina con m3u8 en la query\nhttps://www.ejemplo.es/player?src=a.m3u8\n"
+        )
+        assertEquals(listOf(true, true, false, false), channels.map { it.isStream })
+    }
+
+    @Test
     fun solo_acepta_https_y_genera_id_si_falta() {
         val text = "#EXTM3U\n" +
             "#EXTINF:-1,Sin id\nhttps://ejemplo.es/a\n" +

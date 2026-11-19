@@ -6,6 +6,8 @@ import java.text.Normalizer
  * M3U extendido. Cada canal:
  *   #EXTINF:-1 tvg-id="la1" tvg-logo="..." group-title="Nacional" x-subs="1",La 1
  *   https://pagina-oficial-del-directo
+ * Si la URL termina en .m3u8 es un flujo HLS directo y se reproduce con el reproductor nativo (sin pagina web, asi que
+ * x-subs, x-login y x-recipe no se usan).
  *
  * Atributos propios (los reproductores M3U normales los ignoran):
  *   x-subs="1"      el canal emite subtitulos

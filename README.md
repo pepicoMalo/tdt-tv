@@ -7,6 +7,8 @@ Un único canal a pantalla completa; se cambia de canal con el anillo del mando.
 
 - `MainActivity`: un `WebView` a pantalla completa. Al sintonizar un canal carga su URL oficial e inyecta un script
   (`PageScript.kt`) que deja el reproductor a pantalla completa, lo des-silencia y le da play.
+- Si la URL del canal termina en `.m3u8` (0.3.0 o posterior) es un flujo HLS directo: se reproduce con un `VideoView` nativo
+  (reproductor de Android, sin dependencias), sin página web ni modo cursor. Si el flujo se corta, reintenta 3 veces.
 - La lista de canales (`canales.m3u`) y las recetas por sitio (`recipes.json`) se descargan al arrancar de una URL base
   (`tdttv.listBaseUrl` en `gradle.properties`). Si no hay red se usa la última copia en caché y, en el primer arranque
   sin red, la copia incluida en `app/src/main/assets/`.
@@ -47,7 +49,8 @@ Solo funciona con campos de la propia página, de un iframe del mismo origen o d
 
 ## Formato de `canales.m3u`
 
-M3U extendido; la URL de cada canal es la **página oficial del directo** (solo `https`).
+M3U extendido; la URL de cada canal es la **página oficial del directo** o, si termina en `.m3u8`, un **flujo HLS directo**
+(solo `https`).
 
 ```
 #EXTM3U
@@ -58,7 +61,18 @@ https://www.3cat.cat/3cat/directes/tv3/
 Atributos propios: `x-subs="1"` (el canal emite subtítulos: solo entonces aparece la opción), `x-login="1"` (pide cuenta:
 se queda en la lista, avisa al sintonizarlo y se inicia sesión con el modo cursor; la 0.1.0 lo descartaba),
 `x-recipe="clave"` (fuerza una receta), `x-disabled="1"` (lo desactiva sin borrarlo).
+En los flujos `.m3u8` solo cuentan `x-disabled` y el nombre/grupo: no hay página, así que `x-subs`, `x-login` y `x-recipe` no se usan.
 El orden de la lista es el orden de canales.
+
+Ejemplo de flujo directo:
+
+```
+#EXTINF:-1 tvg-id="realmadridtv" group-title="Nacional",Real Madrid TV
+https://rmtv.akamaized.net/hls/live/2043153/rmtv-es-web/master.m3u8
+```
+
+El reproductor nativo de Android reproduce HLS con segmentos MPEG-TS (y de forma más limitada fMP4/CMAF); los flujos con DRM o con
+tokens que caducan no valen. Comprueba con `curl` que la URL responde sin cuenta y mira `#EXT-X-MAP` en la lista de medios: si aparece, es fMP4.
 
 ## Formato de `recipes.json`
 

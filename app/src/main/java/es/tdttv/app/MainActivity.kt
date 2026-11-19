@@ -7,6 +7,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
+import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -34,6 +36,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.VideoView
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
@@ -45,6 +48,8 @@ private const val EXIT_WINDOW_MS = 2000L
 private const val TAP_MS = 60L
 private const val FIELD_DELAY_MS = 250L
 private const val PAGE_SCROLL_NOTCHES = 6f
+private const val STREAM_RETRY_MS = 4000L
+private const val STREAM_MAX_RETRIES = 3
 
 /**
  * WebView que nunca abre el teclado del sistema: en el Chromecast se abria y se cerraba solo, asi que el texto se
@@ -59,6 +64,7 @@ class MainActivity : Activity() {
 
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
+    private lateinit var video: VideoView
     private lateinit var overlay: TextView
     private lateinit var repo: ChannelRepository
     private lateinit var baseUa: String
@@ -82,6 +88,11 @@ class MainActivity : Activity() {
     private val pointer by lazy { PointerMath(0, 0, resources.displayMetrics.density) }
     private var pointerMode = false
     private var textDialog: AlertDialog? = null
+    private var streamRetries = 0
+    private val retryStream = Runnable {
+        val ch = channels.getOrNull(index)
+        if (ch != null && ch.isStream) startStream(ch)
+    }
     private var lastBack = 0L
     private var okDownAt = 0L
     private var okLongDone = false
@@ -94,6 +105,28 @@ class MainActivity : Activity() {
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         web = buildWebView()
         root.addView(web, FrameLayout.LayoutParams(MATCH, MATCH))
+
+        // Reproductor nativo para los canales cuya URL es un flujo HLS directo (.m3u8); por encima del WebView.
+        video = VideoView(this).apply {
+            visibility = View.GONE
+            isFocusable = false
+            setOnPreparedListener { streamRetries = 0 }
+            setOnErrorListener { _, what, extra ->
+                streamFailed(what, extra)
+                true
+            }
+            setOnInfoListener { _, what, _ ->
+                if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
+                    showOverlay("Cargando…", sticky = true)
+                } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END ||
+                    what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START
+                ) {
+                    channels.getOrNull(index)?.let { showOverlay(channelLabel(it)) }
+                }
+                true
+            }
+        }
+        root.addView(video, FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER))
 
         pointerView = PointerView(this).apply { visibility = View.GONE }
         root.addView(pointerView, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -129,11 +162,14 @@ class MainActivity : Activity() {
     override fun onStop() {
         super.onStop()
         textDialog?.dismiss()
+        ui.removeCallbacks(retryStream)
+        video.stopPlayback()
         web.loadUrl("about:blank")
     }
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
+        video.stopPlayback()
         io.shutdownNow()
         root.removeView(web)
         web.destroy()
@@ -255,13 +291,42 @@ class MainActivity : Activity() {
         if (pointerMode) setPointerMode(false, announce = false)
         index = i.mod(channels.size)
         val ch = channels[index]
-        recipe = recipes.forChannel(ch)
-        web.settings.userAgentString = if (recipe.optBoolean("desktop", true)) desktopUa else baseUa
+        ui.removeCallbacks(retryStream)
+        streamRetries = 0
         hideCustomView()
-        web.loadUrl(ch.url)
+        if (ch.isStream) {
+            web.loadUrl("about:blank")
+            startStream(ch)
+        } else {
+            video.stopPlayback()
+            video.visibility = View.GONE
+            recipe = recipes.forChannel(ch)
+            web.settings.userAgentString = if (recipe.optBoolean("desktop", true)) desktopUa else baseUa
+            web.loadUrl(ch.url)
+        }
         prefs.edit().putString("last", ch.id).apply()
         tuned = true
         showOverlay(channelLabel(ch))
+    }
+
+    private fun startStream(ch: Channel) {
+        video.visibility = View.VISIBLE
+        video.setVideoURI(Uri.parse(ch.url))
+        video.start()
+    }
+
+    /** El flujo se cayo: reintenta unas veces (los directos se cortan al cambiar de red) y despues avisa. */
+    private fun streamFailed(what: Int, extra: Int) {
+        val ch = channels.getOrNull(index) ?: return
+        if (!ch.isStream) return
+        if (streamRetries < STREAM_MAX_RETRIES) {
+            streamRetries++
+            showOverlay("Reconectando ${ch.name}… ($streamRetries/$STREAM_MAX_RETRIES)", sticky = true)
+            ui.removeCallbacks(retryStream)
+            ui.postDelayed(retryStream, STREAM_RETRY_MS)
+        } else {
+            showOverlay("No se pudo reproducir ${ch.name} (error $what/$extra). Menú > Recargar canal", sticky = true)
+        }
     }
 
     private fun channelLabel(ch: Channel): String {
@@ -310,8 +375,10 @@ class MainActivity : Activity() {
         actions += { tune(index) }
         labels += "Actualizar lista de canales"
         actions += { loadLists() }
-        labels += "Cursor y teclado (iniciar sesión, cookies)"
-        actions += { setPointerMode(true) }
+        if (ch?.isStream != true) {
+            labels += "Cursor y teclado (iniciar sesión, cookies)"
+            actions += { setPointerMode(true) }
+        }
         labels += "Salir"
         actions += { finish() }
 
@@ -589,7 +656,9 @@ class MainActivity : Activity() {
                         showMenu()
                     }
                 } else if (!okLongDone) {
-                    setPointerMode(true)
+                    // Un flujo directo no tiene pagina: no hay nada que pulsar con el cursor
+                    val ch = channels.getOrNull(index)
+                    if (ch?.isStream == true) showOverlay(channelLabel(ch)) else setPointerMode(true)
                 }
                 return true
             }
