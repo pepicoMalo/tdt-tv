@@ -79,6 +79,19 @@ class M3uParserTest {
     }
 
     @Test
+    fun x_audio_marca_una_radio_como_flujo_aunque_la_url_no_acabe_en_m3u8() {
+        val channels = M3uParser.parse(
+            "#EXTM3U\n" +
+                "#EXTINF:-1 group-title=\"Radio\" x-audio=\"1\",Radio mp3\nhttps://radio.ejemplo.es/directo.mp3\n" +
+                "#EXTINF:-1 group-title=\"Radio\" x-audio=\"1\",Radio sin extension\nhttps://radio.ejemplo.es/api/live-redirect\n" +
+                "#EXTINF:-1 group-title=\"Radio\",Sin marcar\nhttps://radio.ejemplo.es/otra.mp3\n"
+        )
+        assertEquals(listOf(true, true, false), channels.map { it.audio })
+        assertEquals(listOf(true, true, false), channels.map { it.isStream })
+        assertEquals("radio-mp3", channels[0].id)
+    }
+
+    @Test
     fun x_web_guarda_la_pagina_de_respaldo_solo_si_es_https() {
         val channels = M3uParser.parse(
             "#EXTM3U\n" +

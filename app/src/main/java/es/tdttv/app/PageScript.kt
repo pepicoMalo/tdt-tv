@@ -5,7 +5,8 @@ import org.json.JSONObject
 /**
  * Script que se inyecta en la pagina oficial al terminar de cargar.
  * - Mete el css de la receta y, si fullVideo != false, deja el reproductor a pantalla completa.
- * - Cada segundo: elige el video principal, lo des-silencia y le da play; pulsa "play" si hay selector.
+ * - Cada segundo: elige el video principal, lo des-silencia y le da play (salvo autoplay == false, para paginas de
+ *   catalogo como Netflix, donde hay videos de portada que no se deben tocar); pulsa "play" si hay selector.
  * - Expone window.__tdt.toggleSubs() para el menu del mando.
  * - Expone window.__tdt.setInteractive(on) para el modo cursor: con on=true quita el css inyectado y para el tick,
  *   de modo que la pagina se ve y se comporta como en un navegador normal (iniciar sesion, aceptar cookies).
@@ -53,7 +54,7 @@ object PageScript {
           target.classList.add('tdt-main');
         }
       }
-      if (v) {
+      if (v && cfg.autoplay !== false) {
         if (v.muted) v.muted = false;
         if (v.paused) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
       }

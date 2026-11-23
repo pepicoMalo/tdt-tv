@@ -27,6 +27,14 @@ class PageScriptTest {
     }
 
     @Test
+    fun permite_no_tocar_los_videos_de_la_pagina() {
+        // autoplay:false (recetas de catalogo): el script no des-silencia ni da play a los videos de portada
+        val js = PageScript.build(JSONObject("""{"fullVideo":false,"autoplay":false}"""))
+        assertTrue(js.contains("v && cfg.autoplay !== false"))
+        assertTrue(js.contains("\"autoplay\":false"))
+    }
+
+    @Test
     fun expone_el_cambio_de_modo_interactivo() {
         assertTrue(PageScript.build(recipe).contains("T.setInteractive = function"))
     }

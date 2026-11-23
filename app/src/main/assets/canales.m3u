@@ -1,9 +1,10 @@
 #EXTM3U url-tvg="https://www.tdtchannels.com/epg/TV.xml.gz"
 # Lista v1 (verificada el 2026-11-17 en navegador de escritorio, desde España). Orden = orden de zapping.
-# Atributos propios: x-subs="1" subtitulos, x-login="1" pide cuenta, x-disabled="1" desactivado, x-recipe="clave", x-web="https://..." pagina de respaldo.
+# Atributos propios: x-subs="1" subtitulos, x-login="1" pide cuenta, x-disabled="1" desactivado, x-recipe="clave", x-web="https://..." pagina de respaldo, x-audio="1" emisora de radio.
 # x-login: la app 0.2.0 o posterior lo muestra con el aviso «pide cuenta»; la 0.1.0 lo descarta. Iniciar sesion: OK en el mando (modo cursor y teclado).
 # Una URL que termina en .m3u8 es un flujo HLS directo: la app 0.3.0 o posterior lo reproduce sin pagina web (las anteriores no lo reproducen).
 # La app 0.4.0 o posterior vuelve a la pagina x-web de un canal si su flujo .m3u8 no arranca, y muestra el programa actual en la lista de canales.
+# La app 0.5.0 o posterior reproduce las emisoras x-audio="1" (flujo de audio, p. ej. mp3) y muestra el nombre de la emisora en pantalla; las anteriores no las reproducen.
 # tvg-id es el id del canal en la guia de programacion (url-tvg, XMLTV de TDTChannels); los canales sin id en la guia (Atresmedia) no muestran programa.
 
 # --- Corporación RTVE ---
@@ -105,5 +106,26 @@ https://www.rtpa.es/tpa-television
 https://www.cyltvplay.es/player/d3badef6-d229-4a27-9609-03df3d17ca3/la7/la7
 #EXTINF:-1 tvg-id="Extremadura.TV" group-title="Autonómico" x-web="https://www.canalextremadura.app/videos/182630-television-en-directo",Canal Extremadura
 https://d2ymuyhevki1a1.cloudfront.net/wct-ddd2992e-86fc-4611-a491-7f392259e9ba/continuous/9be76611-d2cd-474d-bf19-ef702ba31b02/index.m3u8
-#EXTINF:-1 tvg-id="AragonTV.TV" group-title="Autonómico" x-login="1",Aragón TV
-https://www.aragonplay.es/watch/live/69934178aea15ae34fa39ad0
+#EXTINF:-1 tvg-id="CMM" group-title="Autonómico" x-login="1",CMM
+https://cdnapisec.kaltura.com/p/2288691/sp/228869100/playManifest/entryId/1_gnz6ity9/protocol/https/format/applehttp/a.m3u8
+
+# --- Radio ---
+# Flujos de audio de las propias emisoras (comprobados el 2026-11-23: https, audio/mpeg). No llevan guia de programacion.
+#EXTINF:-1 group-title="Radio" x-audio="1",Rock FM
+https://rockfm-cope-rrcast.flumotion.com/cope/rockfm.mp3
+#EXTINF:-1 group-title="Radio" x-audio="1",Kiss FM
+https://bbkissfm.kissfmradio.cires21.com/bbkissfm.mp3
+#EXTINF:-1 group-title="Radio" x-audio="1",Los 40 Classic
+https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3
+
+# --- Plataformas de streaming ---
+# No son directos: son las webs oficiales. Hace falta cuenta: OK en el mando (cursor y teclado) para iniciar sesion.
+# La receta "plataforma" no fuerza pantalla completa ni toca los videos de portada.
+#EXTINF:-1 group-title="Plataformas" x-login="1" x-recipe="plataforma",HBO Max
+https://www.hbomax.com/es/es
+#EXTINF:-1 group-title="Plataformas" x-login="1" x-recipe="plataforma",Netflix
+https://www.netflix.com/browse
+#EXTINF:-1 group-title="Plataformas" x-login="1" x-recipe="plataforma",Prime Video
+https://www.primevideo.com/
+#EXTINF:-1 group-title="Plataformas" x-login="1" x-recipe="plataforma",Disney+
+https://www.disneyplus.com/es-es

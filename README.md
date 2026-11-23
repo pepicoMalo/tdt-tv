@@ -10,6 +10,9 @@ Un único canal a pantalla completa; se cambia de canal con el anillo del mando.
 - Si la URL del canal termina en `.m3u8` (0.3.0 o posterior) es un flujo HLS directo: se reproduce con un `VideoView` nativo
   (reproductor de Android, sin dependencias), sin página web ni modo cursor. Si el flujo se corta, reintenta 3 veces; si no
   llega a arrancar (error, o sin imagen a los 20 s) y el canal tiene `x-web`, abre esa página (0.4.0 o posterior).
+- Si el canal lleva `x-audio="1"` (0.5.0 o posterior) es una emisora de radio: la URL es un flujo de audio (mp3, aac…, sin
+  importar la extensión) que reproduce ese mismo `VideoView`, y en pantalla se deja el nombre de la emisora. Una radio se da por
+  arrancada en cuanto el reproductor está preparado (no hay imagen que esperar).
 - La guía de programación (0.4.0 o posterior) se baja en segundo plano de la `url-tvg` de la cabecera de la lista (XMLTV, p. ej.
   el de TDTChannels), se queda en disco solo con los canales de la lista (`tvg-id` = id de la guía) y se refresca cada 6 horas.
   Solo se usa en la lista de canales (`Epg.kt`, `EpgRepository.kt`).
@@ -66,7 +69,8 @@ https://www.3cat.cat/3cat/directes/tv3/
 Atributos propios: `x-subs="1"` (el canal emite subtítulos: solo entonces aparece la opción), `x-login="1"` (pide cuenta:
 se queda en la lista, avisa al sintonizarlo y se inicia sesión con el modo cursor; la 0.1.0 lo descartaba),
 `x-recipe="clave"` (fuerza una receta), `x-disabled="1"` (lo desactiva sin borrarlo), `x-web="https://…"` (página de un canal
-con flujo `.m3u8`, a la que se vuelve si el flujo no arranca; 0.4.0).
+con flujo `.m3u8`, a la que se vuelve si el flujo no arranca; 0.4.0), `x-audio="1"` (emisora de radio: flujo de audio sin
+imagen; 0.5.0).
 En los flujos `.m3u8` no hay página, así que `x-subs`, `x-login` y `x-recipe` solo cuentan si se abre `x-web`.
 `tvg-id` es el id del canal en la guía de programación, y la cabecera `#EXTM3U url-tvg="https://…/guia.xml.gz"` da la guía
 (XMLTV, `.xml` o `.xml.gz`; 0.4.0). Un canal sin id en la guía simplemente no muestra programa.
@@ -104,6 +108,9 @@ La receta se elige por `x-recipe` o por el dominio de la URL, y se superpone a `
 Con `"inheritJs": false` el sitio no hereda el `js` de `default` (el de `default` rechaza los banners de cookies; Atresplayer y
 Mediaset lo desactivan porque su receta los acepta, ya que sin aceptar no dan el directo).
 Si el reproductor vive en un `iframe`, pon como URL del canal la del propio iframe.
+Con `"fullVideo": false` la receta no deja el vídeo a pantalla completa y con `"autoplay": false` el script no des-silencia ni da play a los
+vídeos de la página (0.5.0). La receta `plataforma` de la lista usa las dos para Netflix, Prime Video, Disney+ y HBO Max, que son catálogos y
+no un directo: se entra con OK (modo cursor), se inicia sesión y se navega como en un navegador. Sin probar la reproducción (DRM) en el Chromecast.
 
 ## Compilar
 

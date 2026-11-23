@@ -13,9 +13,11 @@ data class Channel(
     /** Clave de receta explicita; si es null se busca por dominio. */
     val recipeKey: String?,
     /** Pagina web a la que se vuelve si un flujo directo (.m3u8) no arranca. */
-    val webUrl: String? = null
+    val webUrl: String? = null,
+    /** Emisora de radio: la URL es un flujo de audio (mp3, aac...) que se reproduce sin imagen. */
+    val audio: Boolean = false
 ) {
-    /** La URL es un flujo HLS directo (.m3u8): lo reproduce el reproductor nativo en vez de abrir una web. */
+    /** La URL es un flujo HLS directo (.m3u8) o de audio: lo reproduce el reproductor nativo en vez de abrir una web. */
     val isStream: Boolean
-        get() = url.substringBefore('#').substringBefore('?').endsWith(".m3u8", ignoreCase = true)
+        get() = audio || url.substringBefore('#').substringBefore('?').endsWith(".m3u8", ignoreCase = true)
 }

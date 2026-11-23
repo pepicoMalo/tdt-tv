@@ -83,6 +83,17 @@ class RecipeBookTest {
     }
 
     @Test
+    fun las_plataformas_no_fuerzan_pantalla_completa_ni_tocan_los_videos() {
+        val plataforma = M3uParser.parse(
+            "#EXTM3U\n#EXTINF:-1 x-login=\"1\" x-recipe=\"plataforma\",Plataforma\nhttps://www.netflix.com/browse\n"
+        ).single()
+        val r = book.forChannel(plataforma)
+        assertFalse(r.getBoolean("fullVideo"))
+        assertFalse(r.getBoolean("autoplay"))
+        assertTrue(r.getBoolean("desktop"))
+    }
+
+    @Test
     fun inheritJs_no_se_filtra_a_la_receta_final() {
         assertFalse(recipe("Antena 3").has("inheritJs"))
     }

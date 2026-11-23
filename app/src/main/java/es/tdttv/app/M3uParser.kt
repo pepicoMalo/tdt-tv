@@ -17,6 +17,7 @@ import java.text.Normalizer
  *   x-login="1"     pide cuenta: se queda en la lista y el usuario inicia sesion con el modo cursor
  *   x-recipe="clave" fuerza una receta de recipes.json
  *   x-web="https://..." pagina del canal a la que se vuelve si el flujo .m3u8 no arranca
+ *   x-audio="1"     emisora de radio: la URL es un flujo de audio (mp3, aac, .m3u8...) y se reproduce sin pagina web
  *   x-disabled="1"  desactiva el canal sin borrarlo
  */
 object M3uParser {
@@ -52,7 +53,8 @@ object M3uParser {
                 hasSubs = attrs["x-subs"] == "1",
                 needsLogin = attrs["x-login"] == "1",
                 recipeKey = attrs["x-recipe"]?.takeIf { it.isNotBlank() },
-                webUrl = attrs["x-web"]?.takeIf { it.startsWith("https://") }
+                webUrl = attrs["x-web"]?.takeIf { it.startsWith("https://") },
+                audio = attrs["x-audio"] == "1"
             )
         }
         return out

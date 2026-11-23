@@ -11,8 +11,8 @@ android {
         applicationId = "es.tdttv.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
 
         val listBase = (project.findProperty("tdttv.listBaseUrl") as String?) ?: ""
         buildConfigField("String", "LIST_BASE_URL", "\"$listBase\"")

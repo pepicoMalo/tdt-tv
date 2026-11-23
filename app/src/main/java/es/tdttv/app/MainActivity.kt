@@ -72,6 +72,8 @@ class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
     private lateinit var video: VideoView
+    private lateinit var radioCard: LinearLayout
+    private lateinit var radioName: TextView
     private lateinit var overlay: TextView
     private lateinit var repo: ChannelRepository
     private lateinit var baseUa: String
@@ -145,7 +147,14 @@ class MainActivity : Activity() {
         video = VideoView(this).apply {
             visibility = View.GONE
             isFocusable = false
-            setOnPreparedListener { streamRetries = 0 }
+            setOnPreparedListener {
+                streamRetries = 0
+                // Una radio no tiene imagen: estar preparada ya es "arrancada" (si no, el watchdog la daria por muerta)
+                if (channels.getOrNull(index)?.audio == true) {
+                    rendered = true
+                    ui.removeCallbacks(streamWatchdog)
+                }
+            }
             setOnErrorListener { _, what, extra ->
                 streamFailed(what, extra)
                 true
@@ -166,6 +175,28 @@ class MainActivity : Activity() {
             }
         }
         root.addView(video, FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER))
+
+        // Emisoras de radio (x-audio): el reproductor solo da sonido, asi que se deja el nombre de la emisora en pantalla.
+        radioName = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 48f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+        }
+        radioCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            addView(radioName, LinearLayout.LayoutParams(WRAP, WRAP))
+            addView(TextView(context).apply {
+                setTextColor(Color.WHITE)
+                alpha = 0.6f
+                textSize = 22f
+                gravity = Gravity.CENTER
+                text = "Radio en directo"
+            }, LinearLayout.LayoutParams(WRAP, WRAP))
+        }
+        root.addView(radioCard, FrameLayout.LayoutParams(MATCH, MATCH))
 
         pointerView = PointerView(this).apply { visibility = View.GONE }
         root.addView(pointerView, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -374,6 +405,8 @@ class MainActivity : Activity() {
         ui.removeCallbacks(retryStream)
         ui.removeCallbacks(streamWatchdog)
         web.loadUrl("about:blank")
+        radioName.text = ch.name
+        radioCard.visibility = if (ch.audio) View.VISIBLE else View.GONE
         video.visibility = View.VISIBLE
         video.setVideoURI(Uri.parse(ch.url))
         video.start()
@@ -387,6 +420,7 @@ class MainActivity : Activity() {
         ui.removeCallbacks(streamWatchdog)
         video.stopPlayback()
         video.visibility = View.GONE
+        radioCard.visibility = View.GONE
         recipe = recipes.forChannel(ch.copy(url = url))
         web.settings.userAgentString = if (recipe.optBoolean("desktop", true)) desktopUa else baseUa
         web.loadUrl(url)
